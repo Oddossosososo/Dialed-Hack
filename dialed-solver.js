@@ -82,11 +82,12 @@
       if (max === r) h = ((g - b) / diff) % 6;
       else if (max === g) h = (b - r) / diff + 2;
       else h = (r - g) / diff + 4;
-      h = Math.round(h * 60);
+      h = h * 60;
       if (h < 0) h += 360;
     }
 
-    return { h: Math.round(h), s: Math.round(s * 100), b: Math.round(bv * 100) };
+    // Keep the full HSB precision from the RGB target instead of rounding it away.
+    return { h: h, s: s * 100, b: bv * 100 };
   }
 
   function hsbToRgb(h, s, b) {
@@ -124,7 +125,10 @@
 
   function getStripValue(strip) {
     if (!strip) return null;
-    return parseInt(strip.getAttribute('aria-valuenow'));
+    const raw = strip.getAttribute('aria-valuenow');
+    if (raw === null || raw.trim() === '') return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
   }
 
   function getActiveScreen() {
@@ -265,9 +269,9 @@
   async function solveSliders(h, s, b, mode) {
     const strips = getStrips();
     const targets = {
-      h: ((Math.round(h) % 360) + 360) % 360,
-      s: Math.max(0, Math.min(100, Math.round(s))),
-      b: Math.max(0, Math.min(100, Math.round(b))),
+      h: ((h % 360) + 360) % 360,
+      s: Math.max(0, Math.min(100, s)),
+      b: Math.max(0, Math.min(100, b)),
     };
 
     if (!strips.h || !strips.s || !strips.b) {
@@ -288,12 +292,14 @@
     }
     await nextFrame();
 
-    // Only retry channels that did not register the target after that frame.
+    // Sliders may quantize to whole numbers; accept the nearest representable value.
+    // The initial set and verification happen in one animation-frame cycle.
     const corrections = [];
     for (const channel of channels) {
-      if (getStripValue(strips[channel.key]) !== channel.target) {
+      const actual = getStripValue(strips[channel.key]);
+      if (!Number.isFinite(actual) || Math.abs(actual - channel.target) > 0.5) {
         corrections.push(
-          correctChannel(strips[channel.key], channel.target, channel.key, 0, 0)
+          correctChannel(strips[channel.key], channel.target, channel.key, 0, 0.5)
         );
       }
     }
