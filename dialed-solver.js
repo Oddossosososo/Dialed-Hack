@@ -211,16 +211,16 @@
   const RETRY_MS = 80;
   const NUDGE_STEP = 0.15;
 
-  function correctChannel(stripEl, targetVal, channelKey, attempt = 0, tolerance = 1) {
+  function correctChannel(stripEl, targetVal, channelKey, attempt = 0, tolerance = 0) {
     return new Promise(resolve => {
-      if (!stripEl || stopFlag) return resolve();
+      if (!stripEl || stopFlag) return resolve(false);
 
       function attempt_(n) {
-        if (stopFlag || n >= MAX_TRIES) return resolve();
+        if (stopFlag || n >= MAX_TRIES) return resolve(false);
         const actual = getStripValue(stripEl);
-        if (actual === null || Number.isNaN(actual)) return resolve();
-        const err = actual - targetVal;
-        if (Math.abs(err) <= tolerance) return resolve();
+        if (!Number.isFinite(actual)) return resolve(false);
+        if (Math.abs(actual - targetVal) <= tolerance) return resolve(true);
+
         const pct = channelKey === 'h' ? (targetVal / 360) * 100 : 100 - targetVal;
         setSlider(stripEl, pct);
         setTimeout(() => attempt_(n + 1), RETRY_MS);
@@ -256,77 +256,42 @@
 
   async function solveSliders(h, s, b, mode) {
     const strips = getStrips();
-    const isBrutal = mode === 'brutal';
-    const perturbed = perturbTarget(h, s, b, isBrutal);
-    const hPct = (perturbed.h / 360) * 100;
-    const sPct = 100 - perturbed.s;
-    const bPct = 100 - perturbed.b;
+    const targets = {
+      h: ((Math.round(h) % 360) + 360) % 360,
+      s: Math.max(0, Math.min(100, Math.round(s))),
+      b: Math.max(0, Math.min(100, Math.round(b))),
+    };
 
-    if (isBrutal) {
-      setSlider(strips.h, hPct);
-      await delay(30);
-      setSlider(strips.s, sPct);
-      await delay(30);
-      setSlider(strips.b, bPct);
-      await delay(50);
+    if (!strips.h || !strips.s || !strips.b) {
+      throw new Error('Hue, saturation, or brightness slider is missing');
+    }
 
-      const corrections = [];
-      const curH = getStripValue(strips.h);
-      const curS = getStripValue(strips.s);
-      const curB = getStripValue(strips.b);
-      const brutalTol = isBrutal ? 0 : 1;
-      if (curH !== perturbed.h) corrections.push(correctChannel(strips.h, perturbed.h, 'h', 0, brutalTol));
-      if (curS !== perturbed.s) corrections.push(correctChannel(strips.s, perturbed.s, 's', 0, brutalTol));
-      if (curB !== perturbed.b) corrections.push(correctChannel(strips.b, perturbed.b, 'b', 0, brutalTol));
-      await Promise.all(corrections);
-    } else {
-      const doOvershoot = Math.random() < 0.2;
-      const overshootAmt = rand(3, 8);
-      const channels = shuffle([
-        { key: 'h', pct: hPct, target: perturbed.h },
-        { key: 's', pct: sPct, target: perturbed.s },
-        { key: 'b', pct: bPct, target: perturbed.b },
-      ]);
+    // Set the actual captured colour directly; do not deliberately perturb the target.
+    const channels = [
+      { key: 'h', target: targets.h, pct: (targets.h / 360) * 100 },
+      { key: 's', target: targets.s, pct: 100 - targets.s },
+      { key: 'b', target: targets.b, pct: 100 - targets.b },
+    ];
 
-      for (const ch of channels) {
-        let pct = ch.pct;
-        if (doOvershoot) {
-          const overshootPct = ch.key === 'h' ? (overshootAmt / 360) * 100 : overshootAmt;
-          pct = pct + overshootPct * (Math.random() < 0.5 ? 1 : -1);
-        }
-        await setSliderGradual(strips[ch.key], pct, randInt(3, 7));
-        await humanDelay(rand(150, 350), 60);
+    for (const channel of channels) {
+      if (stopFlag) return;
+      setSlider(strips[channel.key], channel.pct);
+      await delay(60);
+    }
+
+    // Verify the slider values and retry any channel that did not reach its target.
+    const corrections = [];
+    for (const channel of channels) {
+      if (getStripValue(strips[channel.key]) !== channel.target) {
+        corrections.push(
+          correctChannel(strips[channel.key], channel.target, channel.key, 0, 0)
+        );
       }
+    }
 
-      if (doOvershoot) {
-        await humanDelay(rand(100, 250), 50);
-        for (const ch of channels) {
-          if (ch.key === 'h') {
-            setSlider(strips.h, (perturbed.h / 360) * 100 + rand(-0.5, 0.5));
-          } else {
-            setSlider(strips[ch.key], (100 - ch.target) + rand(-0.5, 0.5));
-          }
-          emitJitter(strips[ch.key]);
-          await delay(rand(40, 100));
-        }
-      }
-
-      await humanDelay(rand(150, 300), 60);
-      for (let i = 0; i < randInt(2, 5); i++) {
-        const randStrip = strips[channels[i % channels.length].key];
-        emitJitter(randStrip);
-        await delay(rand(30, 80));
-      }
-
-      await humanDelay(rand(200, 400), 80);
-      const corrections = [];
-      const curH = getStripValue(strips.h);
-      const curS = getStripValue(strips.s);
-      const curB = getStripValue(strips.b);
-      if (curH !== perturbed.h) corrections.push(correctChannel(strips.h, perturbed.h, 'h', 0));
-      if (curS !== perturbed.s) corrections.push(correctChannel(strips.s, perturbed.s, 's', 0));
-      if (curB !== perturbed.b) corrections.push(correctChannel(strips.b, perturbed.b, 'b', 0));
-      await Promise.all(corrections);
+    const results = await Promise.all(corrections);
+    if (!stopFlag && results.some(result => result === false)) {
+      console.warn('[Solver] One or more sliders did not confirm the exact target value.');
     }
   }
 
