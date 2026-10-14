@@ -189,7 +189,7 @@
     return arr;
   }
 
-  function setSliderGradual(stripEl, targetPct, steps) {
+  async function setSliderGradual(stripEl, targetPct, steps) {
     if (!stripEl) return;
     const currentPct = (() => {
       const val = parseInt(stripEl.getAttribute('aria-valuenow'));
@@ -203,6 +203,7 @@
       const t = easeOutQuad(i / stepCount);
       const pct = currentPct + (targetPct - currentPct) * t;
       setSlider(stripEl, pct + rand(-0.3, 0.3));
+      await delay(25);
     }
   }
 
@@ -210,25 +211,18 @@
   const RETRY_MS = 80;
   const NUDGE_STEP = 0.15;
 
-  function correctChannel(stripEl, targetVal, channelKey, attempt, tolerance) {
+  function correctChannel(stripEl, targetVal, channelKey, attempt = 0, tolerance = 1) {
     return new Promise(resolve => {
-      const bailEarly = Math.random() < 0.08;
-      if (bailEarly) return resolve();
-      const tol = tolerance != null ? tolerance : 1;
+      if (!stripEl || stopFlag) return resolve();
 
       function attempt_(n) {
         if (stopFlag || n >= MAX_TRIES) return resolve();
         const actual = getStripValue(stripEl);
-        if (actual === null) return resolve();
+        if (actual === null || Number.isNaN(actual)) return resolve();
         const err = actual - targetVal;
-        if (Math.abs(err) <= tol) return resolve();
-        let pct;
-        if (channelKey === 'h') {
-          pct = (targetVal / 360) * 100;
-        } else {
-          pct = 100 - targetVal;
-        }
-        setSlider(stripEl, pct + (-err * NUDGE_STEP));
+        if (Math.abs(err) <= tolerance) return resolve();
+        const pct = channelKey === 'h' ? (targetVal / 360) * 100 : 100 - targetVal;
+        setSlider(stripEl, pct);
         setTimeout(() => attempt_(n + 1), RETRY_MS);
       }
 
@@ -300,7 +294,7 @@
           const overshootPct = ch.key === 'h' ? (overshootAmt / 360) * 100 : overshootAmt;
           pct = pct + overshootPct * (Math.random() < 0.5 ? 1 : -1);
         }
-        setSliderGradual(strips[ch.key], pct, randInt(3, 7));
+        await setSliderGradual(strips[ch.key], pct, randInt(3, 7));
         await humanDelay(rand(150, 350), 60);
       }
 
@@ -310,7 +304,7 @@
           if (ch.key === 'h') {
             setSlider(strips.h, (perturbed.h / 360) * 100 + rand(-0.5, 0.5));
           } else {
-            setSlider(strips[ch.key], (100 - perturbed.target) + rand(-0.5, 0.5));
+            setSlider(strips[ch.key], (100 - ch.target) + rand(-0.5, 0.5));
           }
           emitJitter(strips[ch.key]);
           await delay(rand(40, 100));
@@ -435,7 +429,7 @@
       const isBrutal = desiredMode === 'brutal';
       let round = 0;
 
-      while (!stopFlag) {
+      while (!stopFlag && round < (timings.rounds || 5)) {
         round++;
         setStatus(`Round ${round} — waiting...`);
 
