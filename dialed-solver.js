@@ -207,26 +207,34 @@
     }
   }
 
-  const MAX_TRIES = 15;
-  const RETRY_MS = 80;
-  const NUDGE_STEP = 0.15;
+  const MAX_TRIES = 120; // Up to about 2 seconds at 60 FPS.
+
+  function nextFrame() {
+    return new Promise(resolve => requestAnimationFrame(() => resolve()));
+  }
 
   function correctChannel(stripEl, targetVal, channelKey, attempt = 0, tolerance = 0) {
     return new Promise(resolve => {
       if (!stripEl || stopFlag) return resolve(false);
 
-      function attempt_(n) {
-        if (stopFlag || n >= MAX_TRIES) return resolve(false);
-        const actual = getStripValue(stripEl);
-        if (!Number.isFinite(actual)) return resolve(false);
-        if (Math.abs(actual - targetVal) <= tolerance) return resolve(true);
+      const pct = channelKey === 'h' ? (targetVal / 360) * 100 : 100 - targetVal;
 
-        const pct = channelKey === 'h' ? (targetVal / 360) * 100 : 100 - targetVal;
-        setSlider(stripEl, pct);
-        setTimeout(() => attempt_(n + 1), RETRY_MS);
+      async function attempt_() {
+        for (let n = attempt; n < MAX_TRIES; n++) {
+          if (stopFlag) return resolve(false);
+
+          // Let the browser/game apply the previous slider event before reading it.
+          await nextFrame();
+          const actual = getStripValue(stripEl);
+          if (!Number.isFinite(actual)) return resolve(false);
+          if (Math.abs(actual - targetVal) <= tolerance) return resolve(true);
+
+          setSlider(stripEl, pct);
+        }
+        resolve(false);
       }
 
-      attempt_(attempt);
+      attempt_().catch(() => resolve(false));
     });
   }
 
