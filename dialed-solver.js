@@ -223,13 +223,13 @@
         for (let n = attempt; n < MAX_TRIES; n++) {
           if (stopFlag) return resolve(false);
 
-          // Let the browser/game apply the previous slider event before reading it.
+          // Apply the target first, then verify on the next animation frame.
+          setSlider(stripEl, pct);
           await nextFrame();
+
           const actual = getStripValue(stripEl);
           if (!Number.isFinite(actual)) return resolve(false);
           if (Math.abs(actual - targetVal) <= tolerance) return resolve(true);
-
-          setSlider(stripEl, pct);
         }
         resolve(false);
       }
@@ -281,13 +281,14 @@
       { key: 'b', target: targets.b, pct: 100 - targets.b },
     ];
 
+    // Set all three sliders immediately, then check them together on the next frame.
     for (const channel of channels) {
       if (stopFlag) return;
       setSlider(strips[channel.key], channel.pct);
-      await delay(60);
     }
+    await nextFrame();
 
-    // Verify the slider values and retry any channel that did not reach its target.
+    // Only retry channels that did not register the target after that frame.
     const corrections = [];
     for (const channel of channels) {
       if (getStripValue(strips[channel.key]) !== channel.target) {
