@@ -20,8 +20,8 @@
   let targetScore = 10.00;
 
   const MODE_TIMINGS = {
-    easy: { memorizeMs: 5000, inputTimerMs: null, minGameDurationMs: 15000, rounds: 5 },
-    hard: { memorizeMs: 2000, inputTimerMs: null, minGameDurationMs: 15000, rounds: 5 },
+    easy: { memorizeMs: 2000, inputTimerMs: 3500, minGameDurationMs: 15000, rounds: 5 },
+    hard: { memorizeMs: 2000, inputTimerMs: 3500, minGameDurationMs: 15000, rounds: 5 },
     brutal: { memorizeMs: 2000, inputTimerMs: 3500, minGameDurationMs: 15000, rounds: 5 },
   };
 
@@ -142,10 +142,12 @@
       const active = getActiveScreen();
       const el = active?.querySelector('.CountdownScreen-module__W_NmWW__countdown');
       if (el) {
-        const bg = getComputedStyle(el).backgroundColor;
+        // Use the element's authored colour, not computed transition frames.
+        // Computed styles can expose many in-between RGB values during a flash.
+        const bg = (el.style.backgroundColor || getComputedStyle(el).backgroundColor).replace(/\s+/g, '');
         const hsb = extractHsbFromElement(el);
         if (hsb && !(hsb.h === 0 && hsb.s === 0 && hsb.b === 0)) {
-          const normalized = bg.replace(/\\s+/g, '');
+          const normalized = bg;
           if (normalized !== lastRgb) {
             lastRgb = normalized;
             distinctCount++;
@@ -501,26 +503,20 @@
         }, 8000);
         if (stopFlag) break;
 
-        if (isBrutal) {
-          await delay(50);
-        } else {
-          await humanDelay(400, 200);
-        }
+        // All modes use Brutal's fast guess timing.
+        await delay(50);
 
         await solveSliders(capturedH, capturedS, capturedB, desiredMode);
         if (stopFlag) break;
 
-        if (isBrutal) {
-          await delay(80);
-        } else {
-          await humanDelay(rand(1500, 3500), 400);
-        }
+        // Submit every guess with the same short delay used in Brutal.
+        await delay(80);
 
         const goBtn = await waitFor(() => findGoButton(), 5000);
         click(goBtn);
         setStatus(`Round ${round} done`);
 
-        const roundDelay = isBrutal ? rand(800, 1500) : rand(2500, 4000);
+        const roundDelay = rand(800, 1500);
         await delay(roundDelay);
         if (stopFlag) break;
 
@@ -895,6 +891,6 @@
   };
 
   console.log(
-    '[Dialed.gg Solver] v8.2 loaded — dgSetMode("easy"|"hard"|"brutal") dgSetPlayType("solo"|"daily")',
+    '[Dialed.gg Solver] v8.3 loaded — Brutal colour-phase detection + unified fast guess timing',
   );
 })();
