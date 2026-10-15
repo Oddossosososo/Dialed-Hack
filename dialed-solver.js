@@ -1,6 +1,13 @@
 (function () {
   'use strict';
 
+  // Avoid stacking multiple solver panels and competing automation loops.
+  if (window.__DIALED_SOLVER_LOADED__) {
+    console.warn('[Dialed.gg Solver] Already loaded. Refresh the game page before loading it again.');
+    return;
+  }
+  window.__DIALED_SOLVER_LOADED__ = true;
+
   let capturedH = null;
   let capturedS = null;
   let capturedB = null;
@@ -101,14 +108,24 @@
   }
 
   function extractHsbFromElement(el) {
+    if (!el) return null;
     const bg = el.style.backgroundColor || getComputedStyle(el).backgroundColor;
-    const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    // Accept both comma-separated rgb() and modern space-separated rgb() syntax.
+    const match = bg.match(/rgba?\(\s*(\d+(?:\.\d+)?)\s*(?:,|\s)\s*(\d+(?:\.\d+)?)\s*(?:,|\s)\s*(\d+(?:\.\d+)?)/i);
     if (!match) return null;
-    return rgbToHsb(parseInt(match[1]), parseInt(match[2]), parseInt(match[3]));
+    return rgbToHsb(
+      Math.max(0, Math.min(255, Number(match[1]))),
+      Math.max(0, Math.min(255, Number(match[2]))),
+      Math.max(0, Math.min(255, Number(match[3])))
+    );
   }
 
   function getCountdownColor() {
-    const el = byClass('CountdownScreen-module__W_NmWW__countdown');
+    // Prefer the currently active screen so a hidden/stale countdown isn't read.
+    const active = getActiveScreen();
+    const el = active
+      ? active.querySelector('.CountdownScreen-module__W_NmWW__countdown')
+      : byClass('CountdownScreen-module__W_NmWW__countdown');
     if (!el) return null;
     return extractHsbFromElement(el);
   }
