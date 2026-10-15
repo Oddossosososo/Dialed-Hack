@@ -9,6 +9,8 @@
   let gameStartTime = 0;
   let desiredMode = 'easy';
   let playType = 'solo';
+  // 10.00 is the default; lower goals use a deliberate brightness offset.
+  let targetScore = 10.00;
 
   const MODE_TIMINGS = {
     easy: { memorizeMs: 5000, inputTimerMs: null, minGameDurationMs: 15000, rounds: 5 },
@@ -268,10 +270,14 @@
 
   async function solveSliders(h, s, b, mode) {
     const strips = getStrips();
+    const scoreGap = 10 - targetScore;
+    // Approximation only: the game's exact score formula is not available here.
+    // Keep 10.00 exact; lower targets shift brightness by a score-scaled amount.
+    const brightnessOffset = scoreGap <= 0 ? 0 : Math.max(1, scoreGap * 4);
     const targets = {
       h: ((h % 360) + 360) % 360,
       s: Math.max(0, Math.min(100, s)),
-      b: Math.max(0, Math.min(100, b)),
+      b: Math.max(0, Math.min(100, b + (b <= 50 ? brightnessOffset : -brightnessOffset))),
     };
 
     if (!strips.h || !strips.s || !strips.b) {
@@ -566,6 +572,25 @@
       text-align: center;
       min-height: 16px;
     }
+    #dg-target-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: rgba(255,255,255,0.65);
+      font-size: 11px;
+    }
+    #dg-target-score {
+      width: 58px;
+      box-sizing: border-box;
+      padding: 5px 4px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.07);
+      color: white;
+      font: inherit;
+      text-align: center;
+    }
     .dg-container {
       display: flex;
       align-items: center;
@@ -686,6 +711,10 @@
         <button id="dg-play-solo" class="active">Solo</button>
         <button id="dg-play-daily">Daily</button>
       </div>
+      <div id="dg-target-row">
+        <label for="dg-target-score">Target score</label>
+        <input id="dg-target-score" type="number" min="0" max="10" step="0.01" value="10.00" inputmode="decimal">
+      </div>
       <div id="dg-swatch-row">
         <div id="dg-swatch"></div>
         <div id="dg-hsb"></div>
@@ -737,6 +766,16 @@
     updatePlayButtons();
   });
 
+  const targetScoreInput = document.getElementById('dg-target-score');
+  targetScoreInput.addEventListener('change', () => {
+    const parsed = Number(targetScoreInput.value);
+    targetScore = Number.isFinite(parsed)
+      ? Math.round(Math.max(0, Math.min(10, parsed)) * 100) / 100
+      : 10.00;
+    targetScoreInput.value = targetScore.toFixed(2);
+    setStatus(`Target: ${targetScore.toFixed(2)}/10`);
+  });
+
   const toggle = document.getElementById('dg-toggle');
   toggle.addEventListener('change', () => {
     if (toggle.checked) {
@@ -770,6 +809,7 @@
   window.dgDebug = () => {
     const strips = getStrips();
     console.log('[Solver] Play type:', playType);
+    console.log('[Solver] Target score:', targetScore.toFixed(2), '/ 10');
     console.log('[Solver] Mode:', desiredMode);
     console.log('[Solver] Game mode:', getCurrentMode());
     console.log('[Solver] Strips:', {
