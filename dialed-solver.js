@@ -130,6 +130,40 @@
     return extractHsbFromElement(el);
   }
 
+  async function waitForBrutalFinalColor(timeout = 10000) {
+    // Brutal flashes three decoy colours before the real target: use the 4th
+    // distinct observed colour, rather than capturing the first visible flash.
+    const started = Date.now();
+    let lastRgb = null;
+    let distinctCount = 0;
+    let fourthColor = null;
+
+    while (!stopFlag && Date.now() - started < timeout) {
+      const active = getActiveScreen();
+      const el = active?.querySelector('.CountdownScreen-module__W_NmWW__countdown');
+      if (el) {
+        const bg = getComputedStyle(el).backgroundColor;
+        const hsb = extractHsbFromElement(el);
+        if (hsb && !(hsb.h === 0 && hsb.s === 0 && hsb.b === 0)) {
+          const normalized = bg.replace(/\\s+/g, '');
+          if (normalized !== lastRgb) {
+            lastRgb = normalized;
+            distinctCount++;
+            if (distinctCount === 4) {
+              fourthColor = hsb;
+              break;
+            }
+          }
+        }
+      }
+      await nextFrame();
+    }
+
+    if (stopFlag) throw new Error('stopped');
+    if (!fourthColor) throw new Error('Timed out waiting for Brutal mode’s 4th colour');
+    return fourthColor;
+  }
+
   function getStripByLabel(label) {
     return document.querySelector(`[role="slider"][aria-label="${label}"]`);
   }
@@ -436,23 +470,24 @@
         round++;
         setStatus(`Round ${round} — waiting...`);
 
-        await waitFor(() => {
-          const screen = getActiveScreen();
-          if (!screen) return false;
-          const countdown = screen.querySelector('.CountdownScreen-module__W_NmWW__countdown');
-          if (!countdown) return false;
-          const hsb = extractHsbFromElement(countdown);
-          return hsb && !(hsb.h === 0 && hsb.s === 0 && hsb.b === 0);
-        }, 15000);
-
+        let hsb;
         if (isBrutal) {
-          await delay(100);
+          // Wait for the 4th distinct flash: the first three are decoys.
+          hsb = await waitForBrutalFinalColor(10000);
         } else {
+          await waitFor(() => {
+            const screen = getActiveScreen();
+            if (!screen) return false;
+            const countdown = screen.querySelector('.CountdownScreen-module__W_NmWW__countdown');
+            if (!countdown) return false;
+            const color = extractHsbFromElement(countdown);
+            return color && !(color.h === 0 && color.s === 0 && color.b === 0);
+          }, 15000);
           await humanDelay(600, 200);
+          if (stopFlag) break;
+          hsb = getCountdownColor();
         }
         if (stopFlag) break;
-
-        const hsb = getCountdownColor();
         if (!hsb) throw new Error('Could not read countdown color');
         capturedH = hsb.h;
         capturedS = hsb.s;
